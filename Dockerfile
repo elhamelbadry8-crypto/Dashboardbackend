@@ -1,23 +1,23 @@
-# استخدام نسخة بايثون خفيفة
 FROM python:3.10-slim
 
-# تسطيب أدوات النظام المطلوبة وتعريفات Microsoft SQL Server ODBC
-RUN apt-get update && apt-get install -y curl apt-transport-https gnupg2 \
-    && curl https://packages.microsoft.com/keys/microsoft.asc | apt-key add - \
-    && curl https://packages.microsoft.com/config/debian/11/prod.list > /etc/apt/sources.list.d/mssql-release.list \
-    && apt-get update \
-    && ACCEPT_EULA=Y apt-get install -y msodbcsql18 unixodbc-dev \
-    && apt-get clean -y
+# تسطيب الأدوات الأساسية فقط المطلوبة لبناء الموديل
+RUN apt-get update && apt-get install -y \
+    build-essential \
+    python3-dev \
+    && rm -rf /var/lib/apt/lists/*
 
-# تحديد مسار العمل
-WORKDIR /app
+RUN useradd -m -u 1000 user
+USER user
+ENV HOME=/home/user \
+    PATH=/home/user/.local/bin:$PATH
 
-# نسخ ملف المكتبات وتسطيبه
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+WORKDIR $HOME/app
 
-# نسخ باقي ملفات المشروع
-COPY . .
+COPY --chown=user requirements.txt .
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir gunicorn \
+    && pip install --no-cache-dir -r requirements.txt
 
-# تشغيل السيرفر باستخدام Gunicorn
-CMD gunicorn --bind 0.0.0.0:$PORT app:app
+COPY --chown=user . $HOME/app
+
+CMD ["gunicorn", "--bind", "0.0.0.0:7860", "app:app"]
