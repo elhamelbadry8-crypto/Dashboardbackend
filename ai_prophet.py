@@ -1,22 +1,19 @@
 import pandas as pd
 import numpy as np
 from prophet import Prophet
-import pyodbc
-
-DB_CONFIG = {
-    "DRIVER": "{ODBC Driver 17 for SQL Server}",
-    "SERVER": "db33942.public.databaseasp.net,1433",
-    "DATABASE": "db33942",
-    "UID": "db33942",
-    "PWD": "project2026",
-    "Encrypt": "yes",
-    "TrustServerCertificate": "yes"
-}
+import pymssql  # الاتصال المباشر المتوافق مع السيرفر
 
 def get_ai_forecasts():
     try:
-        conn_str = ";".join([f"{k}={v}" for k, v in DB_CONFIG.items()])
-        conn = pyodbc.connect(conn_str)
+        # الاتصال بقاعدة البيانات باستخدام pymssql
+        conn = pymssql.connect(
+            server="db33942.public.databaseasp.net",
+            user="db33942",
+            password="project2026",
+            database="db33942",
+            port=1433,
+            autocommit=True
+        )
 
         query = """
         SELECT CAST(ordered_at AS DATE) AS ds, SUM(total) AS y
@@ -69,23 +66,19 @@ def get_ai_forecasts():
         hist_monthly = data.groupby('month')['y'].sum().reset_index()
         hist_monthly['month'] = hist_monthly['month'].astype(str)
 
-        # الحفاظ على future_only عشان الجزء الرابع (YoY) يفضل شغال سليم
         future_only = forecast_year_full.tail(365).copy()
 
-        # التعديل: حساب التوقعات للشهور كاملة عشان نتجنب سقوط الشهر الحالي
         current_month_str = pd.to_datetime(data['ds'].max()).strftime('%Y-%m')
         
         forecast_year_full['month'] = forecast_year_full['ds'].dt.to_period('M')
         all_fut_monthly = forecast_year_full.groupby('month')['yhat'].sum().reset_index()
         all_fut_monthly['month'] = all_fut_monthly['month'].astype(str)
         
-        # فلترة التوقعات عشان تبدأ من الشهر الحالي وتكون كاملة
         fut_monthly = all_fut_monthly[all_fut_monthly['month'] >= current_month_str].head(12)
 
         combined_timeline = pd.merge(hist_monthly, fut_monthly, on='month', how='outer')
         combined_timeline.rename(columns={'y': 'actual', 'yhat': 'predicted'}, inplace=True)
         
-        # ترتيب وعرض آخر 6 شهور ماضي و 12 شهر مستقبل
         combined_timeline = combined_timeline.sort_values('month').tail(18)
         
         timeline_chart = []
@@ -95,7 +88,7 @@ def get_ai_forecasts():
             timeline_chart.append({
                 "date": row['month'],
                 "actual": round(act_val, 2) if pd.notna(act_val) else None,
-                "predicted": round(pre_val, 2) if pd.notna(pre_val) else None # 👈 تم تغيير 0 لـ None عشان الشارت مينزلش تحت
+                "predicted": round(pre_val, 2) if pd.notna(pre_val) else None
             })
 
         # ===== 3. Day of Week Analysis =====
